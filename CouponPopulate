@@ -1,0 +1,82 @@
+function PopulateCoupon() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var responseSheet = ss.getSheetByName('Response Sheet');
+  var couponDataSheet = ss.getSheetByName('CouponData');
+  var krCouponsSheet = ss.getSheetByName('KR Coupons');
+  var emailColumn = responseSheet.getRange('B:B').getValues(); // Get the email column
+  var uniqueEmails = {}; // Object to store unique emails
+
+  // Check for duplicate emails and exit if found more than once
+  for (var i = 1; i < emailColumn.length; i++) {
+    var email = emailColumn[i][0];
+    if (email && uniqueEmails[email]) {
+      // Email is a duplicate, set the strings in columns F and G and exit the function
+      responseSheet.getRange(i + 1, 6).setValue('Email đã nhận được mã giảm giá'); // Column F
+      responseSheet.getRange(i + 1, 7).setValue('Email đã nhận được mã giảm giá'); // Column G
+      return;
+    }
+    uniqueEmails[email] = true;
+  }
+
+  // Retrieve data from sheets
+  var responseValues = responseSheet.getDataRange().getValues();
+  var krCouponsValues = krCouponsSheet.getDataRange().getValues();
+  
+  // Set formulas and values in batch
+  var ssActiveSheet = ss.getActiveSheet();
+  var lr = ssActiveSheet.getLastRow();
+  var formulaRangeD = ssActiveSheet.getRange(2, 4, lr - 1, 1);
+  formulaRangeD.setFormula('=IF(C2="Không mua vé Marathon", "", C2&":"&COUNTIF($C$2:C2, C2))');
+  
+  var fillDownRangeD = formulaRangeD.offset(0, 0, lr - 1, 1);
+  formulaRangeD.copyTo(fillDownRangeD);
+  
+  // Set formulas and values in batch
+  var formulaRangeF = ssActiveSheet.getRange(2, 6, lr - 1, 1);
+  formulaRangeF.setFormula('=IFNA(INDEX(CouponData!$B:$B, MATCH(D2, CouponData!$A:$A, 0)), "")');
+
+  
+  var fillDownRangeF = formulaRangeF.offset(0, 0, lr - 1, 1);
+  formulaRangeF.copyTo(fillDownRangeF);
+  
+  var krCouponData = {}; // Object to store KR coupon data
+  var krCouponsToUpdate = []; // Array to store coupons to update
+  
+  // Populate KR coupon data object
+  for (var k = 1; k < krCouponsValues.length; k++) {
+    var krCouponCode = krCouponsValues[k][0];
+    var krCouponClaimed = krCouponsValues[k][1];
+    if (krCouponCode != '' && krCouponClaimed == '') {
+      krCouponData[krCouponCode] = k + 1; // Store the row index for fast lookup
+    }
+  }
+  
+  // Process response values and assign KR coupons
+  for (var i = 1; i < responseValues.length; i++) {
+    var marathonCategory = responseValues[i][2];
+    var kidsRun = responseValues[i][4];
+    var mrCoupon = responseValues[i][5];
+    var krCoupon = responseValues[i][6];
+    
+    if (krCoupon == '' && kidsRun != '') {
+      var krCoupons = [];
+      for (var k = 0; k < kidsRun; k++) {
+        var krCouponCode = Object.keys(krCouponData)[k];
+        if (krCouponCode) {
+          var rowIndex = krCouponData[krCouponCode];
+          krCoupons.push(krCouponCode);
+          krCouponsToUpdate.push(rowIndex);
+        }
+      }
+      
+      // Update KR coupons and response sheet in batch
+      if (krCoupons.length > 0) {
+        var krCouponsToUpdateRange = krCouponsSheet.getRangeList(krCouponsToUpdate.map(row => 'B' + row));
+        krCouponsToUpdateRange.setValue('Yes');
+        
+        var responseRange = responseSheet.getRange(i + 1, 7);
+        responseRange.setValue(krCoupons.join(', '));
+      }
+    }
+  }
+}
